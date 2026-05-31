@@ -1,0 +1,31 @@
+display_name: Magnetro
+package_name: magnetro
+
+maintainer:
+  name: Yuga T
+  email: extrapurpose.2024@gmail.com
+
+priority: optional
+section: video
+installed_size: 50000
+
+dependencies:
+  - libmpv-dev
+  - libsecret-1-0
+
+essential: false
+
+icon: assets/images/logo.png
+
+keywords:
+  - Video
+  - Player
+  - Media
+
+generic_name: Video Player
+
+categories:
+  - AudioVideo
+  - Video
+
+startup_notify: true
