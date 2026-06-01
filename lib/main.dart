@@ -5,10 +5,11 @@ import 'api/seedr_api.dart';
 import 'utils/storage.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-
+import 'package:window_manager/window_manager.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized(); 
+  await windowManager.ensureInitialized();
   final api = await SeedrApi.create();
   final (email, password) = await Storage.getCreds();
 

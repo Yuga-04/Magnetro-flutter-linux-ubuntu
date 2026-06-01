@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_neumorphic_plus/flutter_neumorphic.dart';
 import 'package:get/get.dart';
-import 'package:marquee/marquee.dart';
 import '../screens/video_player_screen.dart';
 import '../api/seedr_api.dart';
 
@@ -150,20 +149,21 @@ class _FileTileState extends State<FileTile> {
 
                   return SizedBox(
                     height: 30,
-                    child: Marquee(
-                      text: widget.name,
-                      blankSpace: 50,
-                      velocity: 32,
-                      pauseAfterRound: const Duration(seconds: 5),
-                      startPadding: 2,
-                      accelerationDuration: const Duration(milliseconds: 800),
-                      decelerationDuration: const Duration(milliseconds: 500),
-                      style: style,
+                    child: Text(
+                      widget.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'UberMove',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFFEDEDED),
+                      ),
                     ),
                   );
                 },
               ), // Meta row
-              SizedBox(height: 3,),
+              SizedBox(height: 3),
               Row(
                 children: [
                   Text(
@@ -176,7 +176,7 @@ class _FileTileState extends State<FileTile> {
                     ),
                   ),
                   // const Spacer(),
-                  SizedBox(width: 10,),
+                  SizedBox(width: 10),
 
                   // ── Play button ──────────────────────────────────────────
                   _isLoadingPlay

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:window_manager/window_manager.dart';
 
 // ── Aspect Ratio Options ──────────────────────────────────────────────────────
 enum _AspectRatioOption {
@@ -35,7 +36,7 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WindowListener {
   // ── Core ──────────────────────────────────────────────────────────────────
   late final Player _player;
   late final VideoController _controller;
@@ -65,6 +66,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   // ── Aspect Ratio ──────────────────────────────────────────────────────────
   _AspectRatioOption _aspectRatio = _AspectRatioOption.bestFit;
 
+  // ── Fullscreen ────────────────────────────────────────────────────────────
+  bool _isFullscreen = false;
+
   // ── Time Display ──────────────────────────────────────────────────────────
   bool _showRemainingTime = false;
 
@@ -80,7 +84,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Timer? _hideVolumeOverlayTimer;
 
   // ── Seek Overlay (keyboard-controlled) ────────────────────────────────────
-  int _seekSeconds = 5; // seconds per arrow press
+  final int _seekSeconds = 15;
+  final int _seekSecondsShift = 40;
 
   // ── Slider Seek (bottom bar) ──────────────────────────────────────────────
   bool _isDraggingSeek = false;
@@ -97,7 +102,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   late AnimationController _seekLeftAnim;
   late AnimationController _seekRightAnim;
   late AnimationController _playPauseAnim;
-  AnimationController? _unlockButtonAnim;
+  late AnimationController _unlockButtonAnim;
 
   // ── Subscriptions ─────────────────────────────────────────────────────────
   final List<StreamSubscription> _subs = [];
@@ -108,10 +113,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _initAnimations();
     _player = Player();
     _controller = VideoController(_player);
-    Future.microtask(_initPlayer);
-    _initSystemUi();
     // Sync initial volume from player
     _volume = _player.state.volume / 100.0;
+    Future.microtask(_initPlayer);
+    _initSystemUi();
+    // Add window listener to detect fullscreen changes externally (e.g. OS-level)
+    windowManager.addListener(this);
+    // Sync initial fullscreen state
+    _syncFullscreenState();
+  }
+
+  // ── FIX: WindowListener callback — keeps _isFullscreen in sync ────────────
+  @override
+  void onWindowEnterFullScreen() {
+    if (mounted) setState(() => _isFullscreen = true);
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    if (mounted) setState(() => _isFullscreen = false);
+  }
+
+  Future<void> _syncFullscreenState() async {
+    try {
+      final isFs = await windowManager.isFullScreen();
+      if (mounted) setState(() => _isFullscreen = isFs);
+    } catch (_) {
+      // windowManager may not be available on all platforms; silently ignore
+    }
   }
 
   void _initAnimations() {
@@ -132,7 +161,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _unlockButtonAnim ??= AnimationController(
+    // FIX: _unlockButtonAnim declared as non-nullable `late`; always initialized here
+    _unlockButtonAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
       value: 1.0,
@@ -141,14 +171,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _initPlayer() {
     _subs.addAll([
-      _player.stream.playing.listen((v) => setState(() => _isPlaying = v)),
-      _player.stream.buffering.listen((v) => setState(() => _isBuffering = v)),
+      _player.stream.playing.listen((v) {
+        if (mounted) setState(() => _isPlaying = v);
+      }),
+      _player.stream.buffering.listen((v) {
+        if (mounted) setState(() => _isBuffering = v);
+      }),
       _player.stream.position.listen((v) {
-        if (!_isDraggingSeek) {
+        if (!_isDraggingSeek && mounted) {
           setState(() => _position = v);
         }
       }),
-      _player.stream.duration.listen((v) => setState(() => _duration = v)),
+      _player.stream.duration.listen((v) {
+        if (mounted) setState(() => _duration = v);
+      }),
       _player.stream.volume.listen((v) {
         if (mounted) setState(() => _volume = v / 100.0);
       }),
@@ -181,8 +217,27 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     ]);
   }
 
+  // ── FIX: Fullscreen Toggle — use WindowListener for state sync instead of
+  //         re-reading after setFullScreen (avoids timing race conditions) ────
+  Future<void> _toggleFullscreen() async {
+    try {
+      // Read current state reliably
+      final currentlyFullscreen = await windowManager.isFullScreen();
+      await windowManager.setFullScreen(!currentlyFullscreen);
+      // State will be updated via onWindowEnterFullScreen / onWindowLeaveFullScreen
+      // But also set it immediately for snappy UI response
+      if (mounted) {
+        setState(() => _isFullscreen = !currentlyFullscreen);
+      }
+    } catch (e) {
+      debugPrint('Fullscreen toggle error: $e');
+    }
+    _showControlsTemporarily();
+  }
+
   @override
   void dispose() {
+    windowManager.removeListener(this);
     _focusNode.dispose();
     for (final s in _subs) s.cancel();
     _player.dispose();
@@ -190,7 +245,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _seekLeftAnim.dispose();
     _seekRightAnim.dispose();
     _playPauseAnim.dispose();
-    _unlockButtonAnim?.dispose();
+    _unlockButtonAnim.dispose();
     _hideControlsTimer?.cancel();
     _feedbackTimer?.cancel();
     _seekLeftFeedbackTimer?.cancel();
@@ -203,94 +258,78 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   // ── Keyboard Handler ──────────────────────────────────────────────────────
+  // FIX: Focus.onKeyEvent expects a sync callback (KeyEventResult), not Future.
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
 
     if (_isLocked) {
-      // Only allow unlock via Escape or L while locked
       if (event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.keyL) {
         _unlockControls();
         return KeyEventResult.handled;
       }
-      return KeyEventResult.handled; // absorb all other keys while locked
+      return KeyEventResult.handled;
     }
 
     final key = event.logicalKey;
+    final isShift = HardwareKeyboard.instance.isShiftPressed;
 
-    // ── Space / K — Play / Pause ───────────────────────────────────────────
     if (key == LogicalKeyboardKey.space || key == LogicalKeyboardKey.keyK) {
       _togglePlayPause();
       _showControlsTemporarily();
       return KeyEventResult.handled;
     }
 
-    // ── Arrow Right / L — Seek forward ────────────────────────────────────
     if (key == LogicalKeyboardKey.arrowRight) {
-      _seekForward(_seekSeconds);
+      isShift ? _seekForward(_seekSecondsShift) : _seekForward(_seekSeconds);
       return KeyEventResult.handled;
     }
 
-    // ── Arrow Left / J — Seek backward ────────────────────────────────────
     if (key == LogicalKeyboardKey.arrowLeft) {
-      _seekBackward(_seekSeconds);
+      isShift ? _seekBackward(_seekSecondsShift) : _seekBackward(_seekSeconds);
       return KeyEventResult.handled;
     }
 
-    // ── Shift + Right — Seek forward 30s ──────────────────────────────────
-    if (key == LogicalKeyboardKey.arrowRight &&
-        HardwareKeyboard.instance.isShiftPressed) {
-      _seekForward(30);
-      return KeyEventResult.handled;
-    }
-
-    // ── Shift + Left — Seek backward 30s ──────────────────────────────────
-    if (key == LogicalKeyboardKey.arrowLeft &&
-        HardwareKeyboard.instance.isShiftPressed) {
-      _seekBackward(30);
-      return KeyEventResult.handled;
-    }
-
-    // ── Arrow Up — Volume up ───────────────────────────────────────────────
     if (key == LogicalKeyboardKey.arrowUp) {
       _adjustVolume(0.1);
       return KeyEventResult.handled;
     }
 
-    // ── Arrow Down — Volume down ───────────────────────────────────────────
     if (key == LogicalKeyboardKey.arrowDown) {
       _adjustVolume(-0.1);
       return KeyEventResult.handled;
     }
 
-    // ── M — Mute toggle ────────────────────────────────────────────────────
     if (key == LogicalKeyboardKey.keyM) {
       _toggleMute();
       return KeyEventResult.handled;
     }
 
-    // ── F — Fullscreen / Aspect ratio cycle ───────────────────────────────
     if (key == LogicalKeyboardKey.keyF) {
-      _cycleAspectRatio();
+      _toggleFullscreen(); // fire-and-forget
       return KeyEventResult.handled;
     }
 
-    // ── L — Lock ──────────────────────────────────────────────────────────
     if (key == LogicalKeyboardKey.keyL) {
       _lockControls();
       return KeyEventResult.handled;
     }
 
-    // ── Escape / Backspace — Go back ──────────────────────────────────────
+    // ── FIX: ESC / Backspace — exit fullscreen OR navigate back ──────────
     if (key == LogicalKeyboardKey.escape ||
         key == LogicalKeyboardKey.backspace) {
-      Navigator.of(context).pop();
+      if (_isFullscreen) {
+        // fire-and-forget async call; keep handler sync
+        unawaited(windowManager.setFullScreen(false));
+        if (mounted) setState(() => _isFullscreen = false);
+      } else {
+        if (mounted) Navigator.of(context).pop();
+      }
       return KeyEventResult.handled;
     }
 
-    // ── Number keys 0-9 — Jump to % of video ─────────────────────────────
     final numMap = {
       LogicalKeyboardKey.digit0: 0.0,
       LogicalKeyboardKey.digit1: 0.1,
@@ -317,13 +356,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   // ── Lock / Unlock ─────────────────────────────────────────────────────────
   void _lockControls() {
     _hideControlsTimer?.cancel();
-    _controlsFadeAnim.reverse();
+    // FIX: Guard animation call — only reverse if currently animating forward
+    if (_controlsFadeAnim.status == AnimationStatus.completed ||
+        _controlsFadeAnim.status == AnimationStatus.forward) {
+      _controlsFadeAnim.reverse();
+    }
     setState(() {
       _isLocked = true;
       _showControls = false;
       _showUnlockButton = true;
     });
-    _unlockButtonAnim?.forward(from: 0);
+    _unlockButtonAnim.forward(from: 0);
     _startHideUnlockButtonTimer();
   }
 
@@ -338,7 +381,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _onLockedTap() {
     _hideUnlockTimer?.cancel();
-    _unlockButtonAnim?.forward(from: 0);
+    _unlockButtonAnim.forward(from: 0);
     setState(() => _showUnlockButton = true);
     _startHideUnlockButtonTimer();
   }
@@ -347,7 +390,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _hideUnlockTimer?.cancel();
     _hideUnlockTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _isLocked) {
-        _unlockButtonAnim?.reverse();
+        _unlockButtonAnim.reverse();
         setState(() => _showUnlockButton = false);
       }
     });
@@ -434,7 +477,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _showControlsTemporarily();
   }
 
-  // ── Volume (via media_kit player — works on Linux) ────────────────────────
+  // ── Volume ────────────────────────────────────────────────────────────────
   void _adjustVolume(double delta) {
     final newVol = (_volume + delta).clamp(0.0, 1.0);
     setState(() => _volume = newVol);
@@ -532,46 +575,47 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   void _showSubtitleSheet() => _openSheet(
-    _TrackSheet(
-      title: 'Subtitles',
-      icon: Icons.subtitles_rounded,
-      items: [
-        _TrackItem(
-          label: 'Off',
-          isSelected: !_subtitlesEnabled,
-          onTap: () {
-            _player.setSubtitleTrack(SubtitleTrack.no());
-            setState(() {
-              _subtitlesEnabled = false;
-              _selectedSubtitle = SubtitleTrack.no();
-            });
-            Navigator.pop(context);
-          },
+        _TrackSheet(
+          title: 'Subtitles',
+          icon: Icons.subtitles_rounded,
+          items: [
+            _TrackItem(
+              label: 'Off',
+              isSelected: !_subtitlesEnabled,
+              onTap: () {
+                _player.setSubtitleTrack(SubtitleTrack.no());
+                setState(() {
+                  _subtitlesEnabled = false;
+                  _selectedSubtitle = SubtitleTrack.no();
+                });
+                Navigator.pop(context);
+              },
+            ),
+            ..._subtitleTracks.where(_isRealSubtitleTrack).map((t) {
+              final isSelected = _subtitlesEnabled && t.id == _selectedSubtitle.id;
+              return _TrackItem(
+                label: _subtitleLabel(t),
+                isSelected: isSelected,
+                onTap: () {
+                  _player.setSubtitleTrack(t);
+                  setState(() {
+                    _subtitlesEnabled = true;
+                    _selectedSubtitle = t;
+                  });
+                  Navigator.pop(context);
+                },
+              );
+            }),
+          ],
+          emptyMessage: 'No subtitle tracks found',
         ),
-        ..._subtitleTracks.where(_isRealSubtitleTrack).map((t) {
-          final isSelected = _subtitlesEnabled && t.id == _selectedSubtitle.id;
-          return _TrackItem(
-            label: _subtitleLabel(t),
-            isSelected: isSelected,
-            onTap: () {
-              _player.setSubtitleTrack(t);
-              setState(() {
-                _subtitlesEnabled = true;
-                _selectedSubtitle = t;
-              });
-              Navigator.pop(context);
-            },
-          );
-        }),
-      ],
-      emptyMessage: 'No subtitle tracks found',
-    ),
-  );
+      );
 
   String _audioLabel(AudioTrack t) {
     final parts = <String>[];
-    if (t.language != null && t.language!.isNotEmpty)
+    if (t.language != null && t.language!.isNotEmpty) {
       parts.add(t.language!.toUpperCase());
+    }
     if (t.title != null && t.title!.isNotEmpty) parts.add(t.title!);
     if (parts.isEmpty) parts.add('Track ${t.id}');
     return parts.isEmpty ? 'Unknown' : parts.join(' — ');
@@ -579,8 +623,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   String _subtitleLabel(SubtitleTrack t) {
     final parts = <String>[];
-    if (t.language != null && t.language!.isNotEmpty)
+    if (t.language != null && t.language!.isNotEmpty) {
       parts.add(t.language!.toUpperCase());
+    }
     if (t.title != null && t.title!.isNotEmpty) parts.add(t.title!);
     if (parts.isEmpty) parts.add('Track ${t.id}');
     return parts.isEmpty ? 'Unknown' : parts.join(' — ');
@@ -610,309 +655,247 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         ? ClipRect(child: rawVideo)
         : rawVideo;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Focus(
-        focusNode: _focusNode,
-        autofocus: true,
-        onKeyEvent: _handleKeyEvent,
-        child: MouseRegion(
-          onEnter: (_) => _showControlsTemporarily(),
-          onHover: (_) {
-            if (!_showControls) _showControlsTemporarily();
-          },
-          child: Stack(
-            children: [
-              // ── Video ──────────────────────────────────────────────────────
-              Positioned.fill(child: videoWidget),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Focus(
+          focusNode: _focusNode,
+          autofocus: true,
+          onKeyEvent: _handleKeyEvent,
+          child: MouseRegion(
+            onEnter: (_) => _showControlsTemporarily(),
+            onHover: (_) {
+              if (!_showControls) _showControlsTemporarily();
+            },
+            child: Stack(
+              children: [
+                // ── Video ──────────────────────────────────────────────────
+                Positioned.fill(child: videoWidget),
 
-              // ── Gesture Layer (mouse clicks, not locked) ───────────────────
-              if (!_isLocked) ...[
-                // Left half — double-click seeks back
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: half,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _toggleControls,
-                    onDoubleTap: () => _seekBackward(_seekSeconds),
-                  ),
-                ),
-
-                // Right half — double-click seeks forward
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: half,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _toggleControls,
-                    onDoubleTap: () => _seekForward(_seekSeconds),
-                  ),
-                ),
-
-                // Centre tap zone (play/pause)
-                Align(
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                    width: 80,
-                    height: h,
+                // ── Gesture Layer ──────────────────────────────────────────
+                if (!_isLocked) ...[
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: half,
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
-                      onTap: _togglePlayPause,
+                      onTap: _toggleControls,
+                      onDoubleTap: () => _seekBackward(_seekSeconds),
                     ),
                   ),
-                ),
-              ],
-
-              // ── Locked: full-screen absorber ──────────────────────────────
-              if (_isLocked)
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _onLockedTap,
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-
-              // ── Buffering ──────────────────────────────────────────────────
-              if (_isBuffering)
-                const Center(
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  ),
-                ),
-
-              // ── Double-tap / keyboard Seek Feedbacks ──────────────────────
-              if (_showSeekLeft)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: half,
-                  child: _SeekFeedback(
-                    isLeft: true,
-                    seconds: _seekSeconds,
-                    anim: _seekLeftAnim,
-                  ),
-                ),
-              if (_showSeekRight)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: half,
-                  child: _SeekFeedback(
-                    isLeft: false,
-                    seconds: _seekSeconds,
-                    anim: _seekRightAnim,
-                  ),
-                ),
-
-              // ── Play/Pause Feedback ────────────────────────────────────────
-              if (_showPlayPause)
-                Center(
-                  child: ScaleTransition(
-                    scale: CurvedAnimation(
-                      parent: _playPauseAnim,
-                      curve: Curves.elasticOut,
-                    ),
-                    child: FadeTransition(
-                      opacity: ReverseAnimation(
-                        CurvedAnimation(
-                          parent: _playPauseAnim,
-                          curve: const Interval(0.6, 1.0),
-                        ),
-                      ),
-                      child: Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          _playPauseIcon,
-                          color: Colors.white,
-                          size: 38,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-              // ── Volume Overlay (keyboard ↑↓ / M) ──────────────────────────
-              if (_showVolumeOverlay)
-                Positioned(
-                  right: 24,
-                  top: h * 0.2,
-                  bottom: h * 0.2,
-                  child: _SliderOverlay(
-                    icon: _volume == 0
-                        ? Icons.volume_off_rounded
-                        : Icons.volume_up_rounded,
-                    value: _volume,
-                  ),
-                ),
-
-              // ── Keyboard Shortcut Hint (shown when controls visible) ───────
-              if (_showControls && !_isLocked)
-                Positioned(
-                  bottom: 90,
-                  left: 0,
-                  right: 0,
-                  child: _KeyboardHintBar(),
-                ),
-
-              // ── Controls Overlay ───────────────────────────────────────────
-              if (!_isLocked)
-                FadeTransition(
-                  opacity: _controlsFadeAnim,
-                  child: _showControls
-                      ? _ControlsOverlay(
-                          title: widget.title,
-                          isPlaying: _isPlaying,
-                          position: _position,
-                          duration: _duration,
-                          isDraggingSeek: _isDraggingSeek,
-                          seekDragValue: _seekDragValue,
-                          subtitlesEnabled: _subtitlesEnabled,
-                          showRemainingTime: _showRemainingTime,
-                          aspectRatio: _aspectRatio,
-                          volume: _volume,
-                          onPlayPause: _togglePlayPause,
-                          onBack: () => Navigator.of(context).pop(),
-                          onAudio: _showAudioSheet,
-                          onSubtitle: _showSubtitleSheet,
-                          onAspectRatio: _cycleAspectRatio,
-                          onToggleTimeDisplay: () => setState(
-                            () => _showRemainingTime = !_showRemainingTime,
-                          ),
-                          onLock: _lockControls,
-                          onVolumeChanged: (v) {
-                            setState(() => _volume = v);
-                            _player.setVolume(v * 100);
-                          },
-                          onSeekChanged: (v) => setState(() {
-                            _isDraggingSeek = true;
-                            _seekDragValue = v;
-                          }),
-                          onSeekEnd: (v) {
-                            final ms =
-                                (v * _duration.inMilliseconds).round();
-                            _player.seek(Duration(milliseconds: ms));
-                            setState(() => _isDraggingSeek = false);
-                            _showControlsTemporarily();
-                          },
-                          fmt: _fmt,
-                        )
-                      : const SizedBox.shrink(),
-                ),
-
-              // ── Unlock Button (shown when locked) ──────────────────────────
-              if (_isLocked && _showUnlockButton)
-                Positioned(
-                  top: 14,
-                  right: 20,
-                  child: FadeTransition(
-                    opacity:
-                        _unlockButtonAnim ?? const AlwaysStoppedAnimation(1.0),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: half,
                     child: GestureDetector(
-                      onTap: _unlockControls,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _toggleControls,
+                      onDoubleTap: () => _seekForward(_seekSeconds),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 80,
+                      height: h,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _togglePlayPause,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ── Locked: full-screen absorber ──────────────────────────
+                if (_isLocked)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _onLockedTap,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+
+                // ── Buffering ──────────────────────────────────────────────
+                if (_isBuffering)
+                  const Center(
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  ),
+
+                // ── Seek Feedbacks ─────────────────────────────────────────
+                if (_showSeekLeft)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: half,
+                    child: _SeekFeedback(
+                      isLeft: true,
+                      seconds: HardwareKeyboard.instance.isShiftPressed
+                          ? _seekSecondsShift
+                          : _seekSeconds,
+                      anim: _seekLeftAnim,
+                    ),
+                  ),
+                if (_showSeekRight)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: half,
+                    child: _SeekFeedback(
+                      isLeft: false,
+                      seconds: HardwareKeyboard.instance.isShiftPressed
+                          ? _seekSecondsShift
+                          : _seekSeconds,
+                      anim: _seekRightAnim,
+                    ),
+                  ),
+
+                // ── Play/Pause Feedback ────────────────────────────────────
+                if (_showPlayPause)
+                  Center(
+                    child: ScaleTransition(
+                      scale: CurvedAnimation(
+                        parent: _playPauseAnim,
+                        curve: Curves.elasticOut,
+                      ),
+                      child: FadeTransition(
+                        opacity: ReverseAnimation(
+                          CurvedAnimation(
+                            parent: _playPauseAnim,
+                            curve: const Interval(0.6, 1.0),
+                          ),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(24),
-                          border:
-                              Border.all(color: Colors.white24, width: 1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: const [
-                            Icon(
-                              Icons.lock_rounded,
-                              color: Colors.white,
-                              size: 15,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'Unlock  (Esc / L)',
-                              style: TextStyle(
-                                fontFamily: 'UberMove',
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _playPauseIcon,
+                            color: Colors.white,
+                            size: 38,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Keyboard Hint Bar
-// ─────────────────────────────────────────────────────────────────────────────
-class _KeyboardHintBar extends StatelessWidget {
-  static const _hints = [
-    (Icons.keyboard_arrow_left, '←/→  Seek 5s'),
-    (Icons.space_bar, 'Space  Play/Pause'),
-    (Icons.keyboard_arrow_up, '↑/↓  Volume'),
-    (Icons.volume_off_rounded, 'M  Mute'),
-    (Icons.aspect_ratio_rounded, 'F  Fit'),
-    (Icons.lock_outline_rounded, 'L  Lock'),
-    (Icons.tag, '0-9  Jump %'),
-  ];
-
-  const _KeyboardHintBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.45),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: _hints
-              .map(
-                (h) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    h.$2,
-                    style: const TextStyle(
-                      fontFamily: 'UberMove',
-                      color: Colors.white54,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
+                // ── Volume Overlay ─────────────────────────────────────────
+                if (_showVolumeOverlay)
+                  Positioned(
+                    right: 24,
+                    top: h * 0.2,
+                    bottom: h * 0.2,
+                    child: _SliderOverlay(
+                      icon: _volume == 0
+                          ? Icons.volume_off_rounded
+                          : Icons.volume_up_rounded,
+                      value: _volume,
                     ),
                   ),
-                ),
-              )
-              .toList(),
+
+                // ── Controls Overlay ───────────────────────────────────────
+                if (!_isLocked)
+                  FadeTransition(
+                    opacity: _controlsFadeAnim,
+                    child: _showControls
+                        ? _ControlsOverlay(
+                            title: widget.title,
+                            isPlaying: _isPlaying,
+                            position: _position,
+                            duration: _duration,
+                            isDraggingSeek: _isDraggingSeek,
+                            seekDragValue: _seekDragValue,
+                            subtitlesEnabled: _subtitlesEnabled,
+                            showRemainingTime: _showRemainingTime,
+                            aspectRatio: _aspectRatio,
+                            isFullscreen: _isFullscreen,
+                            onPlayPause: _togglePlayPause,
+                            onBack: () => Navigator.of(context).pop(),
+                            onAudio: _showAudioSheet,
+                            onSubtitle: _showSubtitleSheet,
+                            onAspectRatio: _cycleAspectRatio,
+                            onFullscreen: _toggleFullscreen,
+                            onToggleTimeDisplay: () => setState(
+                              () => _showRemainingTime = !_showRemainingTime,
+                            ),
+                            onLock: _lockControls,
+                            onSeekChanged: (v) => setState(() {
+                              _isDraggingSeek = true;
+                              _seekDragValue = v;
+                            }),
+                            onSeekEnd: (v) {
+                              final ms = (v * _duration.inMilliseconds).round();
+                              _player.seek(Duration(milliseconds: ms));
+                              setState(() => _isDraggingSeek = false);
+                              _showControlsTemporarily();
+                            },
+                            fmt: _fmt,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+
+                // ── Unlock Button ──────────────────────────────────────────
+                if (_isLocked && _showUnlockButton)
+                  Positioned(
+                    top: 14,
+                    right: 20,
+                    child: FadeTransition(
+                      opacity: _unlockButtonAnim,
+                      child: GestureDetector(
+                        onTap: _unlockControls,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: Colors.white24, width: 1),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.lock_rounded,
+                                color: Colors.white,
+                                size: 15,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'Unlock  (Esc / L)',
+                                style: TextStyle(
+                                  fontFamily: 'UberMove',
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -932,15 +915,15 @@ class _ControlsOverlay extends StatelessWidget {
   final bool subtitlesEnabled;
   final bool showRemainingTime;
   final _AspectRatioOption aspectRatio;
-  final double volume;
+  final bool isFullscreen;
   final VoidCallback onPlayPause;
   final VoidCallback onBack;
   final VoidCallback onAudio;
   final VoidCallback onSubtitle;
   final VoidCallback onAspectRatio;
+  final VoidCallback onFullscreen;
   final VoidCallback onToggleTimeDisplay;
   final VoidCallback onLock;
-  final ValueChanged<double> onVolumeChanged;
   final ValueChanged<double> onSeekChanged;
   final ValueChanged<double> onSeekEnd;
   final String Function(Duration) fmt;
@@ -955,15 +938,15 @@ class _ControlsOverlay extends StatelessWidget {
     required this.subtitlesEnabled,
     required this.showRemainingTime,
     required this.aspectRatio,
-    required this.volume,
+    required this.isFullscreen,
     required this.onPlayPause,
     required this.onBack,
     required this.onAudio,
     required this.onSubtitle,
     required this.onAspectRatio,
+    required this.onFullscreen,
     required this.onToggleTimeDisplay,
     required this.onLock,
-    required this.onVolumeChanged,
     required this.onSeekChanged,
     required this.onSeekEnd,
     required this.fmt,
@@ -998,7 +981,10 @@ class _ControlsOverlay extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.black.withOpacity(0.75), Colors.transparent],
+                colors: [
+                  Colors.black.withValues(alpha: 0.75),
+                  Colors.transparent,
+                ],
               ),
             ),
           ),
@@ -1008,19 +994,22 @@ class _ControlsOverlay extends StatelessWidget {
           bottom: 0,
           left: 0,
           right: 0,
-          height: 140,
+          height: 120,
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
                 end: Alignment.topCenter,
-                colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                colors: [
+                  Colors.black.withValues(alpha: 0.8),
+                  Colors.transparent,
+                ],
               ),
             ),
           ),
         ),
 
-        // Top bar
+        // ── Top bar ───────────────────────────────────────────────────────
         Positioned(
           top: 0,
           left: 0,
@@ -1044,7 +1033,7 @@ class _ControlsOverlay extends StatelessWidget {
                     style: const TextStyle(
                       fontFamily: 'UberMove',
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
                     maxLines: 1,
@@ -1074,6 +1063,15 @@ class _ControlsOverlay extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 _TopBarButton(
+                  icon: isFullscreen
+                      ? Icons.fullscreen_exit_rounded
+                      : Icons.fullscreen_rounded,
+                  label: isFullscreen ? 'Exit FS' : 'Full',
+                  onTap: onFullscreen,
+                  active: isFullscreen,
+                ),
+                const SizedBox(width: 10),
+                _TopBarButton(
                   icon: Icons.lock_open_rounded,
                   label: 'Lock',
                   onTap: onLock,
@@ -1085,7 +1083,7 @@ class _ControlsOverlay extends StatelessWidget {
           ),
         ),
 
-        // Centre play/pause
+        // ── Centre play/pause ─────────────────────────────────────────────
         Center(
           child: GestureDetector(
             onTap: onPlayPause,
@@ -1093,7 +1091,7 @@ class _ControlsOverlay extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.45),
+                color: Colors.black.withValues(alpha: 0.45),
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white24, width: 1.5),
               ),
@@ -1106,7 +1104,7 @@ class _ControlsOverlay extends StatelessWidget {
           ),
         ),
 
-        // Bottom bar
+        // ── Bottom bar ─────────────────────────────────────────────────────
         Positioned(
           bottom: 0,
           left: 0,
@@ -1116,46 +1114,6 @@ class _ControlsOverlay extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ── Volume slider row ───────────────────────────────────────
-                Row(
-                  children: [
-                    Icon(
-                      volume == 0
-                          ? Icons.volume_off_rounded
-                          : volume < 0.5
-                              ? Icons.volume_down_rounded
-                              : Icons.volume_up_rounded,
-                      color: Colors.white60,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 100,
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 5,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 12,
-                          ),
-                          activeTrackColor: Colors.white70,
-                          inactiveTrackColor: Colors.white24,
-                          thumbColor: Colors.white,
-                          overlayColor: Colors.white24,
-                        ),
-                        child: Slider(
-                          value: volume.clamp(0.0, 1.0),
-                          onChanged: onVolumeChanged,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // ── Time row ────────────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Row(
@@ -1166,7 +1124,7 @@ class _ControlsOverlay extends StatelessWidget {
                         style: const TextStyle(
                           fontFamily: 'UberMove',
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 15,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1185,7 +1143,7 @@ class _ControlsOverlay extends StatelessWidget {
                             style: const TextStyle(
                               fontFamily: 'UberMove',
                               color: Colors.white60,
-                              fontSize: 12,
+                              fontSize: 15,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -1195,7 +1153,6 @@ class _ControlsOverlay extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // ── Seek slider ─────────────────────────────────────────────
                 SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 3,
@@ -1262,7 +1219,7 @@ class _TopBarButton extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'UberMove',
                     color: active ? _accent : Colors.white70,
-                    fontSize: 9,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1316,7 +1273,7 @@ class _TrackSheet extends StatelessWidget {
       decoration: BoxDecoration(
         color: _bg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        border: Border.all(color: Colors.white.withOpacity(0.07)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1397,8 +1354,8 @@ class _TrackItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      splashColor: Colors.white.withOpacity(0.05),
-      highlightColor: Colors.white.withOpacity(0.03),
+      splashColor: Colors.white.withValues(alpha: 0.05),
+      highlightColor: Colors.white.withValues(alpha: 0.03),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(
@@ -1419,9 +1376,8 @@ class _TrackItem extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'UberMove',
                   color: isSelected ? Colors.white : Colors.white70,
-                  fontSize: 13,
-                  fontWeight:
-                      isSelected ? FontWeight.w700 : FontWeight.w400,
+                  fontSize: 15,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                 ),
               ),
             ),
@@ -1435,7 +1391,7 @@ class _TrackItem extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Seek Feedback Widget (double-click / keyboard)
+// Seek Feedback Widget
 // ─────────────────────────────────────────────────────────────────────────────
 class _SeekFeedback extends StatelessWidget {
   final bool isLeft;
@@ -1460,8 +1416,7 @@ class _SeekFeedback extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin:
-                    isLeft ? Alignment.centerLeft : Alignment.centerRight,
+                begin: isLeft ? Alignment.centerLeft : Alignment.centerRight,
                 end: isLeft ? Alignment.centerRight : Alignment.centerLeft,
                 colors: [Colors.black, Colors.transparent],
                 stops: const [0.0, 0.75],
@@ -1483,7 +1438,7 @@ class _SeekFeedback extends StatelessWidget {
                   style: const TextStyle(
                     fontFamily: 'UberMove',
                     color: Colors.white,
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1497,7 +1452,7 @@ class _SeekFeedback extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Slider Overlay (Volume — shown on keyboard ↑↓ / M)
+// Slider Overlay (Volume)
 // ─────────────────────────────────────────────────────────────────────────────
 class _SliderOverlay extends StatelessWidget {
   final IconData icon;
@@ -1522,8 +1477,7 @@ class _SliderOverlay extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: value,
                   backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.white),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
                   minHeight: 4,
                 ),
               ),
@@ -1535,7 +1489,7 @@ class _SliderOverlay extends StatelessWidget {
             style: const TextStyle(
               fontFamily: 'UberMove',
               color: Colors.white,
-              fontSize: 10,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
