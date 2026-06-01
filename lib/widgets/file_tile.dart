@@ -48,10 +48,7 @@ class _FileTileState extends State<FileTile> {
       final url = await widget.api.getFileDownload(widget.fileId);
       if (!mounted) return;
       await Get.to(
-        () => VideoPlayerScreen(
-          url: url,
-          title: widget.name,
-        ),
+        () => VideoPlayerScreen(url: url, title: widget.name),
         transition: Transition.fadeIn,
         duration: const Duration(milliseconds: 300),
       );
@@ -104,7 +101,7 @@ class _FileTileState extends State<FileTile> {
         textAlign: TextAlign.center,
         style: const TextStyle(
           fontFamily: 'UberMove',
-          fontSize: 13,
+          fontSize: 20,
           fontWeight: FontWeight.w600,
           color: Color(0xFF7A7A7A),
         ),
@@ -117,50 +114,75 @@ class _FileTileState extends State<FileTile> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildNumber(),
-        const SizedBox(width: 8),
+        const SizedBox(width: 18),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // Title
-              SizedBox(
-                height: 18,
-                child: Marquee(
-                  text: widget.name,
-                  blankSpace: 50,
-                  velocity: 22,
-                  pauseAfterRound: const Duration(seconds: 5),
-                  startPadding: 2,
-                  accelerationDuration: const Duration(milliseconds: 800),
-                  decelerationDuration: const Duration(milliseconds: 500),
-                  style: const TextStyle(
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const style = TextStyle(
                     fontFamily: 'UberMove',
-                    fontSize: 14.5,
+                    fontSize: 20,
                     fontWeight: FontWeight.w500,
                     color: Color(0xFFEDEDED),
-                  ),
-                ),
-              ),
-              // Meta row
+                  );
+
+                  final painter = TextPainter(
+                    text: TextSpan(text: widget.name, style: style),
+                    maxLines: 1,
+                    textDirection: TextDirection.ltr,
+                  )..layout();
+
+                  final textFits = painter.width <= constraints.maxWidth;
+
+                  if (textFits) {
+                    return SizedBox(
+                      height: 30,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(widget.name, maxLines: 1, style: style),
+                      ),
+                    );
+                  }
+
+                  return SizedBox(
+                    height: 30,
+                    child: Marquee(
+                      text: widget.name,
+                      blankSpace: 50,
+                      velocity: 32,
+                      pauseAfterRound: const Duration(seconds: 5),
+                      startPadding: 2,
+                      accelerationDuration: const Duration(milliseconds: 800),
+                      decelerationDuration: const Duration(milliseconds: 500),
+                      style: style,
+                    ),
+                  );
+                },
+              ), // Meta row
+              SizedBox(height: 3,),
               Row(
                 children: [
                   Text(
                     _fmt(widget.size),
                     style: const TextStyle(
                       fontFamily: 'UberMove',
-                      fontSize: 12,
+                      fontSize: 18,
                       fontWeight: FontWeight.w500,
                       color: Color(0xFF7A7A7A),
                     ),
                   ),
-                  const Spacer(),
+                  // const Spacer(),
+                  SizedBox(width: 10,),
 
                   // ── Play button ──────────────────────────────────────────
                   _isLoadingPlay
                       ? const SizedBox(
-                          width: 25,
-                          height: 25,
+                          width: 35,
+                          height: 35,
                           child: Padding(
                             padding: EdgeInsets.all(6),
                             child: CircularProgressIndicator(
@@ -210,7 +232,7 @@ class _FileTileState extends State<FileTile> {
         highlightColor: Colors.white.withValues(alpha: 0.04),
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Icon(icon, color: const Color(0xFF7A7A7A), size: 18),
+          child: Icon(icon, color: const Color(0xFF7A7A7A), size: 28),
         ),
       ),
     );

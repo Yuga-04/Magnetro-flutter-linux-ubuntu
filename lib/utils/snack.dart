@@ -40,7 +40,9 @@ class AppSnack {
     SnackType type = SnackType.info,
     Duration duration = const Duration(seconds: 3),
   }) {
-    try { _current?.remove(); } catch (_) {}
+    try {
+      _current?.remove();
+    } catch (_) {}
     _current = null;
 
     final overlayState = Get.key.currentState?.overlay;
@@ -53,7 +55,9 @@ class AppSnack {
         config: _getConfig(type),
         duration: duration,
         onDone: () {
-          try { entry.remove(); } catch (_) {}
+          try {
+            entry.remove();
+          } catch (_) {}
           if (_current == entry) _current = null;
         },
       ),
@@ -64,8 +68,8 @@ class AppSnack {
   }
 
   static void success(String message) => show(message, type: SnackType.success);
-  static void error(String message)   => show(message, type: SnackType.error);
-  static void info(String message)    => show(message, type: SnackType.info);
+  static void error(String message) => show(message, type: SnackType.error);
+  static void info(String message) => show(message, type: SnackType.info);
 }
 
 class _SnackOverlay extends StatefulWidget {
@@ -115,7 +119,9 @@ class _SnackOverlayState extends State<_SnackOverlay>
     if (_dismissed) return;
     _dismissed = true;
     await _ctrl.reverse();
-    try { widget.onDone(); } catch (_) {}
+    try {
+      widget.onDone();
+    } catch (_) {}
   }
 
   @override
@@ -156,34 +162,44 @@ class _SnackOverlayState extends State<_SnackOverlay>
 
   Widget _buildCard() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Neumorphic(
-        style: NeumorphicStyle(
-          depth: 6,
-          intensity: 0.7,
-          color: const Color(0xFF1C1C1C),
-          lightSource: LightSource.topLeft,
-          shadowDarkColor: Colors.black87,
-          shadowLightColor: Colors.white10,
-          boxShape: NeumorphicBoxShape.roundRect(BorderRadius.circular(14)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(widget.config.icon, color: widget.config.color, size: 22),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.message,
-                  style: const TextStyle(
-                    color: Color(0xFFDDDDDD),
-                    fontSize: 13,
-                    fontFamily: 'UberMove',
+      padding: const EdgeInsets.only(left: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: 0.45, // ← 45% of screen width
+          child: Neumorphic(
+            style: NeumorphicStyle(
+              depth: 6,
+              intensity: 0.7,
+              color: const Color(0xFF1C1C1C),
+              lightSource: LightSource.topLeft,
+              shadowDarkColor: Colors.black87,
+              shadowLightColor: Colors.white10,
+              boxShape: NeumorphicBoxShape.roundRect(BorderRadius.circular(14)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.config.icon,
+                    color: widget.config.color,
+                    size: 30,
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      style: const TextStyle(
+                        color: Color(0xFFDDDDDD),
+                        fontSize: 20,
+                        fontFamily: 'UberMove',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

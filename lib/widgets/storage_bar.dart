@@ -37,18 +37,18 @@ class _StorageBarState extends State<StorageBar> {
         : 0.0;
 
     return SizedBox(
-      height: 20,
-      width: 170,
+      height: 40,
+      width: 430,
       child: Row(
         children: [
-          const SizedBox(width: 8),
+          const SizedBox(width: 18),
 
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: LinearProgressIndicator(
                 value: pct,
-                minHeight: 4,
+                minHeight: 8,
                 backgroundColor: Colors.white10,
                 valueColor: const AlwaysStoppedAnimation(
                   Color.fromARGB(255, 169, 23, 67),
@@ -57,13 +57,13 @@ class _StorageBarState extends State<StorageBar> {
             ),
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: 18),
 
           Text(
             '${_fmt(widget.used)} / ${_fmt(widget.max)}',
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 10.5,
+              fontSize: 16,
               fontFamily: 'UberMove',
             ),
           ),

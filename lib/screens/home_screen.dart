@@ -114,24 +114,16 @@ class HomeScreen extends StatelessWidget {
             onTap: () => _showAddMagnetDialog(context, ctrl),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                // color: _accent.withValues(alpha: 0.12),
-                // borderRadius: BorderRadius.circular(20),
-                // border: Border.all(
-                //   color: _accent.withValues(alpha: 0.55),
-                //   width: 1.2,
-                // ),
-              ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_rounded, color: _accent, size: 16),
+                  Icon(Icons.add_rounded, color: _accent, size: 36),
                   SizedBox(width: 2),
                   Text(
                     'Add Magnet',
                     style: TextStyle(
                       color: _accent,
-                      fontSize: 12,
+                      fontSize: 22,
                       fontWeight: FontWeight.w700,
                       fontFamily: 'UberMove',
                     ),
@@ -150,33 +142,33 @@ class HomeScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          ValueListenableBuilder<Map<String, double>>(
-            valueListenable: api.storageNotifier,
-            builder: (_, storage, __) => StorageBar(
-              used: storage['used'] ?? 0,
-              max: storage['max'] ?? 1,
-            ),
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'MAGNETRO',
-            style: TextStyle(
-              color: _textColor,
-              fontWeight: FontWeight.w700,
-              fontSize: 17,
-              fontFamily: 'UberMove',
-            ),
-          ),
-          const SizedBox(width: 8),
           _LogoButton(
             onTap: () => ctrl.loadFiles(force: true),
             onLongPress: () => _logout(context, ctrl),
             accent: _accent,
             bg: Colors.transparent,
             btnStyle: _btnStyle,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'MAGNETRO',
+            style: TextStyle(
+              color: _textColor,
+              fontWeight: FontWeight.w700,
+              fontSize: 25,
+              fontFamily: 'UberMove',
+            ),
+          ),
+          const SizedBox(width: 18),
+
+          ValueListenableBuilder<Map<String, double>>(
+            valueListenable: api.storageNotifier,
+            builder: (_, storage, __) => StorageBar(
+              used: storage['used'] ?? 0,
+              max: storage['max'] ?? 1,
+            ),
           ),
         ],
       ),
@@ -200,8 +192,8 @@ class HomeScreen extends StatelessWidget {
                   boxShape: const NeumorphicBoxShape.circle(),
                 ),
                 child: const SizedBox(
-                  width: 80,
-                  height: 80,
+                  width: 100,
+                  height: 100,
                   child: Center(
                     child: Icon(
                       Icons.cloud_upload_outlined,
@@ -216,7 +208,7 @@ class HomeScreen extends StatelessWidget {
                 'No files yet',
                 style: TextStyle(
                   color: Colors.grey,
-                  fontSize: 15,
+                  fontSize: 20,
                   fontFamily: 'UberMove',
                 ),
               ),
@@ -225,7 +217,7 @@ class HomeScreen extends StatelessWidget {
                 'Tap + to add a magnet link',
                 style: TextStyle(
                   color: Colors.grey,
-                  fontSize: 12,
+                  fontSize: 20,
                   fontFamily: 'UberMove',
                 ),
               ),
@@ -263,168 +255,247 @@ class HomeScreen extends StatelessWidget {
   void _showAddMagnetDialog(BuildContext context, HomeController ctrl) {
     final magnetCtrl = TextEditingController();
 
+    void submitMagnet() {
+      if (ctrl.isAddingMagnet.value) return;
+
+      final magnet = magnetCtrl.text.trim();
+
+      if (magnet.isEmpty || !magnet.startsWith('magnet:')) {
+        AppSnack.error('Please enter a valid magnet link');
+        return;
+      }
+
+      Get.back();
+      ctrl.addMagnet(magnet);
+    }
+
+    void cancelDialog() {
+      if (!ctrl.isAddingMagnet.value) {
+        Get.back();
+      }
+    }
+
     Get.dialog(
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: 0.75),
-      Obx(() {
-        final screenWidth = MediaQuery.of(Get.context!).size.width;
-        final screenHeight = MediaQuery.of(Get.context!).size.height;
-
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 40,
-          ),
-          child: Container(
-            width: screenWidth - 32,
-            constraints: BoxConstraints(maxHeight: screenHeight * 0.75),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_bgTop, _bgMid, _bgBottom],
-                stops: [0.0, 0.45, 1.0],
+      Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+            SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) {
+                  submitMagnet();
+                  return null;
+                },
               ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.add_link_rounded, color: _accent, size: 22),
-                    SizedBox(width: 10),
-                    Text(
-                      'Add Magnet',
-                      style: TextStyle(
-                        color: _textColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        fontFamily: 'UberMove',
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) {
+                  cancelDialog();
+                  return null;
+                },
+              ),
+            },
+            child: Focus(
+              autofocus: false,
+              child: Builder(
+                builder: (context) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+
+                  final dialogWidth = screenWidth > 1400
+                      ? 900.0
+                      : screenWidth > 1000
+                      ? 750.0
+                      : screenWidth * 0.92;
+
+                  return Container(
+                    width: dialogWidth,
+                    height: 400,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_bgTop, _bgMid, _bgBottom],
+                        stops: [0.0, 0.45, 1.0],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Neumorphic(
-                  style: NeumorphicStyle(
-                    depth: 4,
-                    intensity: 0.9,
-                    color: const Color(0xFF0E0E0E),
-                    lightSource: LightSource.topLeft,
-                    shadowLightColor: Colors.white12,
-                    shadowDarkColor: Colors.black87,
-                    boxShape: NeumorphicBoxShape.roundRect(
-                      BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: TextField(
-                    controller: magnetCtrl,
-                    autofocus: true,
-                    maxLines: 6,
-                    minLines: 4,
-                    enabled: !ctrl.isAddingMagnet.value,
-                    style: const TextStyle(
-                      color: _textColor,
-                      fontSize: 13,
-                      fontFamily: 'UberMove',
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: 'Paste magnet link here...',
-                      hintStyle: TextStyle(
-                        color: Colors.grey,
-                        fontSize: 13,
-                        fontFamily: 'UberMove',
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.07),
                       ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (!ctrl.isAddingMagnet.value)
-                      NeumorphicButton(
-                        onPressed: () => Get.back(),
-                        minDistance: 3,
-                        style: _btnStyle.copyWith(
-                          color: const Color.fromARGB(255, 213, 59, 48),
-                          boxShape: NeumorphicBoxShape.roundRect(
-                            BorderRadius.circular(6),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.add_link_rounded,
+                              color: _accent,
+                              size: 32,
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Add Magnet',
+                              style: TextStyle(
+                                color: _textColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                                fontFamily: 'UberMove',
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        Obx(
+                          () => Neumorphic(
+                            style: NeumorphicStyle(
+                              depth: 4,
+                              intensity: 0.9,
+                              color: const Color(0xFF0E0E0E),
+                              lightSource: LightSource.topLeft,
+                              shadowLightColor: Colors.white12,
+                              shadowDarkColor: Colors.black87,
+                              boxShape: NeumorphicBoxShape.roundRect(
+                                BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: TextField(
+                              controller: magnetCtrl,
+                              autofocus: true,
+                              enabled: !ctrl.isAddingMagnet.value,
+
+                              minLines: 6,
+                              maxLines: 6,
+
+                              keyboardType: TextInputType.text,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => submitMagnet(),
+
+                              style: const TextStyle(
+                                color: _textColor,
+                                fontSize: 16,
+                                fontFamily: 'UberMove',
+                              ),
+                              decoration: const InputDecoration(
+                                hintText: 'magnet:?xt=urn:btih:...',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 16,
+                                  fontFamily: 'UberMove',
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 18,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 28,
-                          vertical: 10,
+
+                        const Spacer(),
+
+                        const Divider(color: Color(0x22FFFFFF), height: 1),
+
+                        const SizedBox(height: 16),
+
+                        Row(
+                          children: [
+                            const Text(
+                              'Enter → Add    Esc → Cancel',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                                fontFamily: 'UberMove',
+                              ),
+                            ),
+                            const Spacer(),
+
+                            Obx(
+                              () => NeumorphicButton(
+                                onPressed: ctrl.isAddingMagnet.value
+                                    ? null
+                                    : cancelDialog,
+                                minDistance: 5,
+                                style: _btnStyle.copyWith(
+                                  color: const Color(0xFFD53B30),
+                                  boxShape: NeumorphicBoxShape.roundRect(
+                                    BorderRadius.circular(8),
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 28,
+                                  vertical: 12,
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                    fontFamily: 'UberMove',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            Obx(
+                              () => NeumorphicButton(
+                                onPressed: ctrl.isAddingMagnet.value
+                                    ? null
+                                    : submitMagnet,
+                                style: _btnStyle.copyWith(
+                                  boxShape: NeumorphicBoxShape.roundRect(
+                                    BorderRadius.circular(8),
+                                  ),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 36,
+                                  vertical: 12,
+                                ),
+                                child: Text(
+                                  ctrl.isAddingMagnet.value
+                                      ? 'Adding...'
+                                      : 'Add',
+                                  style: TextStyle(
+                                    color: ctrl.isAddingMagnet.value
+                                        ? Colors.grey
+                                        : Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    fontFamily: 'UberMove',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'UberMove',
-                            fontWeight: FontWeight(700),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 10),
-                    NeumorphicButton(
-                      onPressed: ctrl.isAddingMagnet.value
-                          ? null
-                          : () {
-                              final magnet = magnetCtrl.text.trim();
-                              if (magnet.isEmpty ||
-                                  !magnet.startsWith('magnet:')) {
-                                AppSnack.error(
-                                  'Please enter a valid magnet link',
-                                );
-                                return;
-                              }
-                              Get.back();
-                              ctrl.addMagnet(magnet);
-                            },
-                      style: _btnStyle.copyWith(
-                        boxShape: NeumorphicBoxShape.roundRect(
-                          BorderRadius.circular(6),
-                        ),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 10,
-                      ),
-                      child: Text(
-                        'Add',
-                        style: TextStyle(
-                          color: ctrl.isAddingMagnet.value
-                              ? Colors.grey
-                              : Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'UberMove',
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ],
+                  );
+                },
+              ),
             ),
           ),
-        );
-      }),
+        ),
+      ),
     );
   }
 
@@ -435,117 +506,211 @@ class HomeScreen extends StatelessWidget {
     String id,
     String name,
   ) {
+    void deleteFile() {
+      Get.back();
+      ctrl.deleteFile(id, name);
+    }
+
+    void cancelDelete() {
+      Get.back();
+    }
+
     Get.dialog(
       barrierDismissible: false,
       barrierColor: Colors.black.withValues(alpha: 0.75),
       Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 40),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [_bgTop, _bgMid, _bgBottom],
-              stops: [0.0, 0.45, 1.0],
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        child: Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+
+            SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) {
+                  deleteFile();
+                  return null;
+                },
+              ),
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) {
+                  cancelDelete();
+                  return null;
+                },
+              ),
+            },
+            child: Focus(
+              autofocus: false,
+              child: Builder(
+                builder: (context) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+
+                  final dialogWidth = screenWidth > 1400
+                      ? 900.0
+                      : screenWidth > 1000
+                      ? 750.0
+                      : screenWidth * 0.92;
+
+                  return Container(
+                    width: dialogWidth,
+                    height: 320,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_bgTop, _bgMid, _bgBottom],
+                        stops: [0.0, 0.45, 1.0],
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.07),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              color: Color(0xFFFF6B6B),
+                              size: 32,
+                            ),
+                            SizedBox(width: 12),
+                            Text(
+                              'Delete File',
+                              style: TextStyle(
+                                color: _textColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                                fontFamily: 'UberMove',
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        Text(
+                          'Are you sure you want to permanently delete:',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 14,
+                            fontFamily: 'UberMove',
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.04),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.05),
+                            ),
+                          ),
+                          child: Text(
+                            name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'UberMove',
+                            ),
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        const Divider(color: Color(0x22FFFFFF), height: 1),
+
+                        const SizedBox(height: 16),
+
+                        Row(
+                          children: [
+                            const Text(
+                              'Enter → Delete    Esc → Cancel',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                                fontFamily: 'UberMove',
+                              ),
+                            ),
+
+                            const Spacer(),
+
+                            NeumorphicButton(
+                              onPressed: cancelDelete,
+                              minDistance: 5,
+                              style: _btnStyle.copyWith(
+                                boxShape: NeumorphicBoxShape.roundRect(
+                                  BorderRadius.circular(8),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 28,
+                                vertical: 12,
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                  fontFamily: 'UberMove',
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(width: 12),
+
+                            NeumorphicButton(
+                              onPressed: deleteFile,
+                              minDistance: 5,
+                              style: _btnStyle.copyWith(
+                                color: const Color(0xFFD53B30),
+                                boxShape: NeumorphicBoxShape.roundRect(
+                                  BorderRadius.circular(8),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 36,
+                                vertical: 12,
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  fontFamily: 'UberMove',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(
-                    Icons.delete_outline_rounded,
-                    color: Color(0xFFFF6B6B),
-                    size: 22,
-                  ),
-                  SizedBox(width: 10),
-                  Text(
-                    'Delete File',
-                    style: TextStyle(
-                      color: _textColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      fontFamily: 'UberMove',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Are you sure you want to delete\n"$name"?',
-                style: const TextStyle(
-                  color: Colors.grey,
-                  fontSize: 13,
-                  fontFamily: 'UberMove',
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  NeumorphicButton(
-                    onPressed: () => Get.back(),
-                    minDistance: 3,
-                    style: _btnStyle.copyWith(
-                      boxShape: NeumorphicBoxShape.roundRect(
-                        BorderRadius.circular(6),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 10,
-                    ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontFamily: 'UberMove',
-                        fontWeight: FontWeight(700),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  NeumorphicButton(
-                    onPressed: () {
-                      Get.back();
-                      ctrl.deleteFile(id, name);
-                    },
-                    minDistance: 3,
-                    style: _btnStyle.copyWith(
-                      color: const Color.fromARGB(255, 213, 59, 48),
-                      boxShape: NeumorphicBoxShape.roundRect(
-                        BorderRadius.circular(6),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 28,
-                      vertical: 10,
-                    ),
-                    child: const Text(
-                      'Delete',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'UberMove',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ),
         ),
       ),
@@ -557,197 +722,229 @@ class HomeScreen extends StatelessWidget {
     try {
       final url = await api.getFileDownload(fileId);
       Get.bottomSheet(
-        Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [_bgTop, _bgMid, _bgBottom],
-              stops: [0.0, 0.45, 1.0],
+        FractionallySizedBox(
+          widthFactor: 1.0, // full width
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_bgTop, _bgMid, _bgBottom],
+                stops: [0.0, 0.45, 1.0],
+              ),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
             ),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.6),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const Row(
-                children: [
-                  Icon(Icons.link_rounded, color: _accent, size: 22),
-                  SizedBox(width: 10),
-                  Text(
-                    'Download Link',
-                    style: TextStyle(
-                      color: _textColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      fontFamily: 'UberMove',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Neumorphic(
-                style: NeumorphicStyle(
-                  depth: 4,
-                  intensity: 0.9,
-                  color: const Color(0xFF0E0E0E),
-                  lightSource: LightSource.topLeft,
-                  shadowLightColor: Colors.white10,
-                  shadowDarkColor: Colors.black87,
-                  boxShape: NeumorphicBoxShape.roundRect(
-                    BorderRadius.circular(12),
-                  ),
-                ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Text(
-                    url,
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                      fontFamily: 'UberMove',
-                    ),
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
+                  padding: const EdgeInsets.fromLTRB(
+                    24,
+                    20,
+                    24,
+                    32,
+                  ), // increased horizontal padding
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 50,
+                          height: 5,
+                          margin: const EdgeInsets.only(bottom: 18),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+
+                      const Row(
+                        children: [
+                          Icon(Icons.link_rounded, color: _accent, size: 32),
+                          SizedBox(width: 10),
+                          Text(
+                            'Download Link',
+                            style: TextStyle(
+                              color: _textColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
+                              fontFamily: 'UberMove',
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: Neumorphic(
+                          style: NeumorphicStyle(
+                            depth: 4,
+                            intensity: 0.9,
+                            color: const Color(0xFF0E0E0E),
+                            lightSource: LightSource.topLeft,
+                            shadowLightColor: Colors.white10,
+                            shadowDarkColor: Colors.black87,
+                            boxShape: NeumorphicBoxShape.roundRect(
+                              BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: SelectableText(
+                              url,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 15,
+                                fontFamily: 'UberMove',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: NeumorphicButton(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: url));
+                                Get.back();
+                                AppSnack.success('Link copied to clipboard');
+                              },
+                              minDistance: 3,
+                              style: _btnStyle.copyWith(
+                                boxShape: NeumorphicBoxShape.roundRect(
+                                  BorderRadius.circular(6),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              child: const Center(
+                                child: Text(
+                                  'Copy Link',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'UberMove',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          Expanded(
+                            child: NeumorphicButton(
+                              onPressed: () async {
+                                Get.back();
+
+                                try {
+                                  final short = await api.shortUrl(url);
+                                  Clipboard.setData(ClipboardData(text: short));
+                                  AppSnack.success('Short URL copied');
+                                } catch (_) {
+                                  AppSnack.error('URL shortening failed');
+                                }
+                              },
+                              minDistance: 3,
+                              style: _btnStyle.copyWith(
+                                boxShape: NeumorphicBoxShape.roundRect(
+                                  BorderRadius.circular(6),
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              child: const Center(
+                                child: Text(
+                                  'Short & Copy',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'UberMove',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: NeumorphicButton(
+                          onPressed: () async {
+                            Get.back();
+
+                            final uri = Uri.parse(url);
+
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            } else {
+                              AppSnack.error('Could not open link');
+                            }
+                          },
+                          minDistance: 3,
+                          style: _btnStyle.copyWith(
+                            color: _accent,
+                            boxShape: NeumorphicBoxShape.roundRect(
+                              BorderRadius.circular(6),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          child: const Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.open_in_browser_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Download',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'UberMove',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: NeumorphicButton(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: url));
-                        Get.back();
-                        AppSnack.success('Link copied to clipboard');
-                      },
-                      minDistance: 3,
-                      style: _btnStyle.copyWith(
-                        boxShape: NeumorphicBoxShape.roundRect(
-                          BorderRadius.circular(6),
-                        ),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: const Center(
-                        child: Text(
-                          'Copy Link',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'UberMove',
-                            fontWeight: FontWeight(700),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: NeumorphicButton(
-                      onPressed: () async {
-                        Get.back();
-                        try {
-                          final short = await api.shortUrl(url);
-                          Clipboard.setData(ClipboardData(text: short));
-                          AppSnack.success('Short URL copied');
-                        } catch (_) {
-                          AppSnack.error('URL shortening failed');
-                        }
-                      },
-                      minDistance: 3,
-                      style: _btnStyle.copyWith(
-                        boxShape: NeumorphicBoxShape.roundRect(
-                          BorderRadius.circular(6),
-                        ),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      child: const Center(
-                        child: Text(
-                          'Short & Copy',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'UberMove',
-                            fontWeight: FontWeight(700),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: NeumorphicButton(
-                  onPressed: () async {
-                    Get.back();
-                    final uri = Uri.parse(url);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    } else {
-                      AppSnack.error('Could not open link');
-                    }
-                  },
-                  minDistance: 3,
-                  style: _btnStyle.copyWith(
-                    color: _accent,
-                    boxShape: NeumorphicBoxShape.roundRect(
-                      BorderRadius.circular(6),
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  child: const Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.open_in_browser_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Download',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'UberMove',
-                            fontWeight: FontWeight(700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
         isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        ignoreSafeArea: false, // lets the sheet respect safe area properly
       );
     } catch (e) {
       AppSnack.error(e.toString().replaceAll('Exception: ', ''));
@@ -776,7 +973,7 @@ class _TorrentsTab extends StatelessWidget {
           'Torrents',
           style: TextStyle(
             color: Color(0xFFE0E0E0),
-            fontSize: 16,
+            fontSize: 26,
             fontWeight: FontWeight.w700,
             fontFamily: 'UberMove',
           ),
@@ -787,8 +984,8 @@ class _TorrentsTab extends StatelessWidget {
           builder: (context, constraints) {
             return Container(
               // roughly half the text width — tweak the fraction as needed
-              width: 43,
-              height: 2.5,
+              width: 85,
+              height: 3.5,
               decoration: BoxDecoration(
                 color: accent,
                 borderRadius: BorderRadius.circular(2),
@@ -860,8 +1057,8 @@ class _LogoButtonState extends State<_LogoButton> {
         scale: _holding ? 0.88 : 1.0,
         duration: const Duration(milliseconds: 150),
         child: SizedBox(
-          width: 30,
-          height: 30,
+          width: 60,
+          height: 60,
           child: Center(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
@@ -870,13 +1067,13 @@ class _LogoButtonState extends State<_LogoButton> {
                       Icons.logout_rounded,
                       key: ValueKey('logout'),
                       color: Colors.redAccent,
-                      size: 25,
+                      size: 50,
                     )
                   : Image.asset(
                       key: const ValueKey('logo'),
                       'assets/images/logo.png',
-                      width: 30,
-                      height: 30,
+                      width: 60,
+                      height: 60,
                       fit: BoxFit.contain,
                     ),
             ),
