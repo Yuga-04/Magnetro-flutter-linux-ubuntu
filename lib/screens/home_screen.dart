@@ -285,6 +285,7 @@ class HomeScreen extends StatelessWidget {
           shortcuts: const <ShortcutActivator, Intent>{
             SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
             SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+            SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
           },
           child: Actions(
             actions: <Type, Action<Intent>>{
@@ -310,8 +311,8 @@ class HomeScreen extends StatelessWidget {
                   final dialogWidth = screenWidth > 1400
                       ? 900.0
                       : screenWidth > 1000
-                      ? 750.0
-                      : screenWidth * 0.92;
+                          ? 750.0
+                          : screenWidth * 0.92;
 
                   return Container(
                     width: dialogWidth,
@@ -506,6 +507,9 @@ class HomeScreen extends StatelessWidget {
     String id,
     String name,
   ) {
+    // ✅ FIX: ensure dialog receives keyboard focus so Shortcuts can trigger.
+    final focusNode = FocusNode(debugLabel: 'delete_dialog_focus');
+
     void deleteFile() {
       Get.back();
       ctrl.deleteFile(id, name);
@@ -524,8 +528,8 @@ class HomeScreen extends StatelessWidget {
         child: Shortcuts(
           shortcuts: const <ShortcutActivator, Intent>{
             SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-
             SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+            SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
           },
           child: Actions(
             actions: <Type, Action<Intent>>{
@@ -543,7 +547,8 @@ class HomeScreen extends StatelessWidget {
               ),
             },
             child: Focus(
-              autofocus: false,
+              autofocus: true, // ✅ FIX
+              focusNode: focusNode, // ✅ FIX
               child: Builder(
                 builder: (context) {
                   final screenWidth = MediaQuery.of(context).size.width;
@@ -551,8 +556,8 @@ class HomeScreen extends StatelessWidget {
                   final dialogWidth = screenWidth > 1400
                       ? 900.0
                       : screenWidth > 1000
-                      ? 750.0
-                      : screenWidth * 0.92;
+                          ? 750.0
+                          : screenWidth * 0.92;
 
                   return Container(
                     width: dialogWidth,
@@ -602,9 +607,9 @@ class HomeScreen extends StatelessWidget {
 
                         const SizedBox(height: 16),
 
-                        Text(
+                        const Text(
                           'Are you sure you want to permanently delete:',
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: Colors.grey,
                             fontSize: 14,
                             fontFamily: 'UberMove',
@@ -714,7 +719,10 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      // ✅ FIX: prevent FocusNode leak
+      focusNode.dispose();
+    });
   }
 
   // ─── Download Link ─────────────────────────────────────────────────────────
